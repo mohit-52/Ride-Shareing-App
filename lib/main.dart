@@ -1,17 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:ride_app/services/routing/router.dart';
+import 'app.dart';
+
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  AppNavigator.init();
+
   runApp(const MyApp());
-}
-
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Scaffold(body: Center(child: Text('Hello, World!'))),
-    );
-  }
 }
