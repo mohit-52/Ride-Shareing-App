@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'services/routing/router.dart';
-import 'firebase_options.dart';
+import 'package:ride_app/services/routing/router.dart';
 import 'app.dart';
 
 
@@ -13,6 +11,7 @@ void main() async {
   );
 
   AppNavigator.init();
+  await HiveDB.instance.init();
 
   runApp(const MyApp());
 }
