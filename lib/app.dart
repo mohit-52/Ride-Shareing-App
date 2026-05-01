@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:ride_app/services/routing/router.dart';
+import 'services/routing/router.dart';
+import 'theme/theme.dart';
 
 
-/// Application entry point
+/// Application entry point.
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
@@ -10,6 +11,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp.router(
       debugShowCheckedModeBanner: false,
+      theme: AppTheme.petroleumModernismLightTheme,
       routerConfig: AppNavigator.router,
     );
   }
