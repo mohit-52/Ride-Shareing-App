@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:ride_app/root.dart';
+import 'package:ride_app/screens/home_screen.dart';
 import 'observer.dart';
 import 'paths.dart';
 
@@ -29,7 +29,7 @@ class AppNavigator {
         path: RoutePath.root,
         name: RoutePath.root,
         pageBuilder: (ctx, state) {
-          return MaterialPage(child: const RootScreen());
+          return const MaterialPage(child: HomeScreen());
         },
       ),
     ];
