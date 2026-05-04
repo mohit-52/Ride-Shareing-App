@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 
 class FindRidePage extends StatelessWidget {
@@ -81,10 +82,66 @@ class Header extends StatelessWidget {
   }
 }
 
-class SearchCard extends StatelessWidget {
+class SearchCard extends StatefulWidget {
   const SearchCard({super.key});
 
+  @override
+  State<SearchCard> createState() => _SearchCardState();
+}
+
+class _SearchCardState extends State<SearchCard> {
   static const primaryColor = Color(0xFF0E6F5C);
+  String _selectedDate = "Today";
+  String _selectedTime = "08:00 AM";
+
+  Future<void> _selectTime(BuildContext context) async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 8, minute: 0),
+    );
+    if (picked != null) {
+      if (mounted) {
+        setState(() {
+          _selectedTime = picked.format(context);
+        });
+      }
+    }
+  }
+
+  void _selectDateDialog() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.symmetric(vertical: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                title: const Text("Today"),
+                leading: const Icon(Icons.calendar_today, color: primaryColor),
+                onTap: () {
+                  setState(() => _selectedDate = "Today");
+                  Navigator.pop(context);
+                },
+              ),
+              ListTile(
+                title: const Text("Tomorrow"),
+                leading: const Icon(Icons.calendar_today_outlined, color: primaryColor),
+                onTap: () {
+                  setState(() => _selectedDate = "Tomorrow");
+                  Navigator.pop(context);
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -99,9 +156,19 @@ class SearchCard extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(child: _smallBox(Icons.calendar_today, "Today")),
+              Expanded(
+                child: GestureDetector(
+                  onTap: _selectDateDialog,
+                  child: _smallBox(Icons.calendar_today, _selectedDate),
+                ),
+              ),
               const SizedBox(width: 10),
-              Expanded(child: _smallBox(Icons.access_time, "08:00 AM")),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _selectTime(context),
+                  child: _smallBox(Icons.access_time, _selectedTime),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -125,20 +192,90 @@ class SearchCard extends StatelessWidget {
   }
 
   Widget _inputBox(String label, String value) {
+    //fetch this list dynamically form firebase for better suggestions
+    final List<String> _locations = [
+      "Palwal",
+      "Gurgaon",
+      "Delhi",
+      "Faridabad",
+      "Noida",
+      "Sector 21, GGN",
+      "IGI Airport T3",
+      "Cyber City, Gurgaon",
+      "Huda City Centre"
+    ];
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(label, style: const TextStyle(color: Colors.grey)),
         const SizedBox(height: 5),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-          decoration: BoxDecoration(
-            color: const Color(0xFFEDEFF5),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Text(value, style: const TextStyle(fontSize: 16)),
-        )
+        Autocomplete<String>(
+          initialValue: TextEditingValue(text: value),
+          optionsBuilder: (TextEditingValue textEditingValue) {
+            if (textEditingValue.text.isEmpty) {
+              return const Iterable<String>.empty();
+            }
+            return _locations.where((String location) {
+              return location.toLowerCase().contains(textEditingValue.text.toLowerCase());
+            });
+          },
+          fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+            return Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFEDEFF5),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: TextFormField(
+                controller: textEditingController,
+                focusNode: focusNode,
+                onFieldSubmitted: (String value) {
+                  onFieldSubmitted();
+                },
+                decoration: const InputDecoration(
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(vertical: 14),
+                  isDense: true,
+                ),
+                style: const TextStyle(fontSize: 16),
+              ),
+            );
+          },
+          optionsViewBuilder: (context, onSelected, options) {
+            return Align(
+              alignment: Alignment.topLeft,
+              child: Material(
+                elevation: 4.0,
+                borderRadius: BorderRadius.circular(12),
+                clipBehavior: Clip.antiAlias,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 250),
+                  child: SizedBox(
+                    width: MediaQuery.of(context).size.width - 64, // match container width
+                    child: ListView.separated(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: options.length,
+                      separatorBuilder: (context, index) => const Divider(height: 1),
+                      itemBuilder: (BuildContext context, int index) {
+                        final String option = options.elementAt(index);
+                        return ListTile(
+                          leading: const Icon(Icons.location_on_outlined, color: Colors.grey),
+                          title: Text(option),
+                          onTap: () {
+                            onSelected(option);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        ),
       ],
     );
   }
@@ -247,9 +384,17 @@ class RideCard extends StatelessWidget {
               ),
               Row(
                 children: [
-                  CircleAvatar(
-                    backgroundColor: const Color(0xFFEDEFF5),
-                    child: const Icon(Icons.call),
+                  GestureDetector(
+                    onTap: () async {
+                      final Uri tel = Uri.parse('tel:+911234567890');
+                      if (await canLaunchUrl(tel)) {
+                        await launchUrl(tel);
+                      }
+                    },
+                    child: const CircleAvatar(
+                      backgroundColor: Color(0xFFEDEFF5),
+                      child: Icon(Icons.call),
+                    ),
                   ),
                   const SizedBox(width: 10),
                   ElevatedButton(
