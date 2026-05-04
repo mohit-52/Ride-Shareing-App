@@ -52,7 +52,7 @@ class _OfferRidePageState extends State<OfferRidePage> {
   }
 
   void _incrementSeats() {
-    if (_availableSeats < 6) setState(() => _availableSeats++);
+    if (_availableSeats < 4) setState(() => _availableSeats++);
   }
 
   void _decrementSeats() {
@@ -248,7 +248,7 @@ class _OfferRidePageState extends State<OfferRidePage> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         const Text(
-                          '\$',
+                          '\Rs',
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
