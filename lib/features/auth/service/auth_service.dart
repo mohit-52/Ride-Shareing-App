@@ -8,3 +8,4 @@ abstract class PhoneNoAuthService<T, D> {
   Future<PhoneAuthResult> verifyPhoneNumber(String phoneNumber);
   Future<T> verifySmsCode(String smsCode, D data);
 }
+
