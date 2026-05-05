@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'find_ride_screen.dart';
-import 'offer_ride_screen.dart';
-import 'my_trips_Screen.dart';
-import 'profile_screen.dart';
+import '../../rides/screens/find_ride_screen.dart';
+import '../../rides/screens/offer_ride_screen.dart';
+import '../../trips/screens/my_trips_Screen.dart';
+import '../../profile/screens/profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:ride_app/screens/home_screen.dart';
+import 'package:ride_app/features/home/screens/home_screen.dart';
 import 'observer.dart';
 import 'paths.dart';
 
