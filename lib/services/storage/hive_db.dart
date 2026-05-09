@@ -1,4 +1,4 @@
-import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:ride_app/features/auth/models/user_model.dart';
 
 
@@ -16,6 +16,7 @@ class HiveDB {
   late Box _userBox;
 
   Future<void> init() async {
+    await Hive.initFlutter();
     Hive.registerAdapter(UserHiveModelAdapter());
     _userBox = await Hive.openBox(HiveKeys.userBox);
   }

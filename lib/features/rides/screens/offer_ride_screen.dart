@@ -1,4 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:ride_app/features/rides/models/ride_model.dart';
+import 'package:ride_app/services/firebase/firestore_service.dart';
+import 'package:ride_app/services/storage/hive_db.dart';
 
 class OfferRidePage extends StatefulWidget {
   const OfferRidePage({super.key});
@@ -14,11 +19,15 @@ class _OfferRidePageState extends State<OfferRidePage> {
   final TextEditingController _fromController = TextEditingController();
   final TextEditingController _toController = TextEditingController();
   final TextEditingController _fareController =
-      TextEditingController(text: '12.50');
+      TextEditingController(text: '150');
 
   TimeOfDay _departureTime = const TimeOfDay(hour: 8, minute: 30);
+  DateTime _departureDate = DateTime.now();
   int _availableSeats = 3;
   bool _repeatDaily = false;
+  bool _isPublishing = false;
+
+  final FirestoreService _firestoreService = FirestoreService();
 
   String get _formattedTime {
     final hour = _departureTime.hourOfPeriod == 0
@@ -27,6 +36,32 @@ class _OfferRidePageState extends State<OfferRidePage> {
     final minute = _departureTime.minute.toString().padLeft(2, '0');
     final period = _departureTime.period == DayPeriod.am ? 'AM' : 'PM';
     return '${hour.toString().padLeft(2, '0')}:$minute $period';
+  }
+
+  String get _formattedDate {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final selected = DateTime(_departureDate.year, _departureDate.month, _departureDate.day);
+
+    if (selected == today) return 'Today';
+    if (selected == today.add(const Duration(days: 1))) return 'Tomorrow';
+
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                     'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${_departureDate.day} ${months[_departureDate.month - 1]}, ${_departureDate.year}';
+  }
+
+  /// YYYY-MM-DD format for Firestore queries
+  String get _departureDateString {
+    return '${_departureDate.year}-'
+        '${_departureDate.month.toString().padLeft(2, '0')}-'
+        '${_departureDate.day.toString().padLeft(2, '0')}';
+  }
+
+  /// HH:MM 24h format for Firestore storage
+  String get _departureTimeString {
+    return '${_departureTime.hour.toString().padLeft(2, '0')}:'
+        '${_departureTime.minute.toString().padLeft(2, '0')}';
   }
 
   Future<void> _pickTime() async {
@@ -51,6 +86,30 @@ class _OfferRidePageState extends State<OfferRidePage> {
     }
   }
 
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _departureDate,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 90)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: primaryColor,
+              onPrimary: Colors.white,
+              onSurface: Colors.black,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null) {
+      setState(() => _departureDate = picked);
+    }
+  }
+
   void _incrementSeats() {
     if (_availableSeats < 4) setState(() => _availableSeats++);
   }
@@ -65,6 +124,116 @@ class _OfferRidePageState extends State<OfferRidePage> {
     _toController.dispose();
     _fareController.dispose();
     super.dispose();
+  }
+
+  Future<void> _publishRide() async {
+    // ── Validation ──
+    final from = _fromController.text.trim();
+    final to = _toController.text.trim();
+    final fareText = _fareController.text.trim();
+
+    if (from.isEmpty || to.isEmpty) {
+      _showSnackBar('Please enter starting point and destination.');
+      return;
+    }
+
+    final fare = int.tryParse(fareText);
+    if (fare == null || fare <= 0) {
+      _showSnackBar('Please enter a valid fare amount.');
+      return;
+    }
+
+    // ── Get current user data ──
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    if (firebaseUser == null) {
+      _showSnackBar('You must be logged in to publish a ride.');
+      return;
+    }
+
+    final hiveUser = HiveDB.instance.getUserData();
+    final userName = hiveUser?.name ?? 'Unknown';
+    final userPhone = firebaseUser.phoneNumber ?? hiveUser?.phoneNo ?? '';
+
+    // ── Build departure datetime ──
+    final departureDateTime = DateTime(
+      _departureDate.year,
+      _departureDate.month,
+      _departureDate.day,
+      _departureTime.hour,
+      _departureTime.minute,
+    );
+
+    // ── Prevent publishing past rides ──
+    if (departureDateTime.isBefore(DateTime.now())) {
+      _showSnackBar('Departure time is in the past. Please select a future time.');
+      return;
+    }
+
+    setState(() => _isPublishing = true);
+
+    try {
+      final journey = JourneyModel(
+        id: '',  // Will be auto-generated by Firestore
+        captainUid: firebaseUser.uid,
+        captainName: userName,
+        captainPhone: userPhone,
+        fromCity: from.toLowerCase(),
+        fromDisplay: from,
+        toCity: to.toLowerCase(),
+        toDisplay: to,
+        departureDate: _departureDateString,
+        departureTime: _departureTimeString,
+        departureDateTime: Timestamp.fromDate(departureDateTime),
+        seatsTotal: _availableSeats,
+        farePerSeat: fare,
+        status: JourneyStatus.active,
+        isRecurring: _repeatDaily,
+        createdAt: Timestamp.now(),
+      );
+
+      await _firestoreService.create(
+        collectionPath: 'journeys',
+        data: journey.toMap(),
+      );
+
+      if (mounted) {
+        _showSnackBar(
+          '🚀 Ride published! $_availableSeats seat(s) from $from → $to at $_formattedTime',
+          isSuccess: true,
+        );
+
+        // Reset form
+        _fromController.clear();
+        _toController.clear();
+        _fareController.text = '150';
+        setState(() {
+          _availableSeats = 3;
+          _repeatDaily = false;
+          _departureDate = DateTime.now();
+          _departureTime = const TimeOfDay(hour: 8, minute: 30);
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar('Failed to publish ride: ${e.toString()}');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isPublishing = false);
+      }
+    }
+  }
+
+  void _showSnackBar(String message, {bool isSuccess = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isSuccess ? primaryColor : Colors.red.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
   }
 
   @override
@@ -171,6 +340,66 @@ class _OfferRidePageState extends State<OfferRidePage> {
 
               const SizedBox(height: 16),
 
+              // Departure Date Card
+              _cardContainer(
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Departure Date',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.calendar_today,
+                                color: primaryColor,
+                                size: 22,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                _formattedDate,
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: _pickDate,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Colors.grey.shade300,
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.calendar_month_outlined,
+                          color: Colors.black87,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
               // Departure Time Card
               _cardContainer(
                 child: Row(
@@ -248,7 +477,7 @@ class _OfferRidePageState extends State<OfferRidePage> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         const Text(
-                          '\Rs',
+                          '₹',
                           style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.bold,
@@ -260,7 +489,7 @@ class _OfferRidePageState extends State<OfferRidePage> {
                           child: TextField(
                             controller: _fareController,
                             keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true),
+                                decimal: false),
                             style: const TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
@@ -355,7 +584,7 @@ class _OfferRidePageState extends State<OfferRidePage> {
                     Switch(
                       value: _repeatDaily,
                       onChanged: (val) => setState(() => _repeatDaily = val),
-                      activeColor: Colors.white,
+                      activeThumbColor: Colors.white,
                       activeTrackColor: primaryColor,
                       inactiveTrackColor: Colors.grey.shade300,
                       inactiveThumbColor: Colors.white,
@@ -379,11 +608,20 @@ class _OfferRidePageState extends State<OfferRidePage> {
                     ),
                     elevation: 0,
                   ),
-                  onPressed: _publishRide,
-                  icon: const Icon(Icons.rocket_launch_outlined, size: 20),
-                  label: const Text(
-                    'Publish Ride',
-                    style: TextStyle(
+                  onPressed: _isPublishing ? null : _publishRide,
+                  icon: _isPublishing
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation(Colors.white),
+                          ),
+                        )
+                      : const Icon(Icons.rocket_launch_outlined, size: 20),
+                  label: Text(
+                    _isPublishing ? 'Publishing...' : 'Publish Ride',
+                    style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w600,
                     ),
@@ -412,27 +650,6 @@ class _OfferRidePageState extends State<OfferRidePage> {
     );
   }
 
-  void _publishRide() {
-    if (_fromController.text.trim().isEmpty ||
-        _toController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter starting point and destination.'),
-          backgroundColor: primaryColor,
-        ),
-      );
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Ride published! $_availableSeats seat(s) from ${_fromController.text} → ${_toController.text} at $_formattedTime',
-        ),
-        backgroundColor: primaryColor,
-      ),
-    );
-  }
-
   Widget _cardContainer({required Widget child}) {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -441,7 +658,7 @@ class _OfferRidePageState extends State<OfferRidePage> {
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 10,
             offset: const Offset(0, 5),
           )
@@ -615,7 +832,6 @@ class _Header extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // const Icon(Icons.menu, size: 28),
         const Text(
           'SeatShare',
           style: TextStyle(
@@ -624,14 +840,7 @@ class _Header extends StatelessWidget {
             color: primaryColor,
           ),
         ),
-        // const CircleAvatar(
-        //   radius: 18,
-        //   backgroundColor: Colors.black87,
-        //   child: Icon(Icons.person, color: Colors.white, size: 18),
-        // ),
       ],
     );
   }
 }
-
-
